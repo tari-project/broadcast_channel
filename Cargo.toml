@@ -1,6 +1,6 @@
 [package]
 name = "tari_broadcast_channel"
-version = "0.0.5"
+version = "0.1.0"
 authors = ["Filip Dulic <filip.dulic@gmail.com>", "Vladan Popovic <vladanovic@gmail.com>", "Bojan Petrovic <bojan_petrovic@fastmail.fm>", "The Tari Development Community"]
 description = "Bounded non-blocking single-producer-multi-consumer broadcast channel"
 license = "Apache-2.0/MIT"
