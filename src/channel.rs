@@ -12,8 +12,10 @@ use std::{
 // Use std mpsc's error types as our own
 pub use std::sync::mpsc::{RecvError, RecvTimeoutError, SendError, TryRecvError};
 
+const ID_MULTIPLIER: usize = 10_000;
+
 /// Function used to create and initialise a (Sender, Receiver) tuple.
-pub fn bounded<T>(size: usize) -> (Sender<T>, Receiver<T>) {
+pub fn bounded<T>(size: usize, receiver_id: usize) -> (Sender<T>, Receiver<T>) {
     let mut buffer = Vec::new();
     buffer.resize(size, ArcSwapOption::new(None));
     let buffer = Arc::new(buffer);
@@ -37,6 +39,9 @@ pub fn bounded<T>(size: usize) -> (Sender<T>, Receiver<T>) {
             ri: AtomicCounter::new(0),
             sub_count,
             is_sender_available,
+            messages_dropped_count: AtomicCounter::new(0),
+            messages_dropped_state: AtomicBool::new(false),
+            id: std::cmp::max(receiver_id, 1) * ID_MULTIPLIER,
         },
     )
 }
@@ -71,6 +76,12 @@ pub struct Receiver<T> {
     sub_count: Arc<AtomicCounter>,
     /// true if the sender is available
     is_sender_available: Arc<AtomicBool>,
+    /// Messages discarded counter
+    messages_dropped_count: AtomicCounter,
+    /// Message dropped when read
+    messages_dropped_state: AtomicBool,
+    /// Name of the receiver channel
+    id: usize,
 }
 
 impl<T> Sender<T> {
@@ -112,6 +123,7 @@ impl<T> Receiver<T> {
     /// Receives some atomic reference to an object if queue is not empty, or None if it is. Never
     /// Blocks
     pub fn try_recv(&self) -> Result<Arc<T>, TryRecvError> {
+        self.messages_dropped_state.store(false, Ordering::Relaxed);
         if self.ri.get() == self.wi.get() {
             if self.is_sender_available() {
                 return Err(TryRecvError::Empty);
@@ -122,15 +134,36 @@ impl<T> Receiver<T> {
 
         // Reader has not read enough to keep up with (writer - buffer size) so
         // set the reader pointer to be (writer - buffer size)
+        let temp_ri = self.ri.get();
         loop {
             let val = self.buffer[self.ri.get() % self.size].load_full().unwrap();
             if self.wi.get() - self.ri.get() > self.size {
                 self.ri.set(self.wi.get() - self.size);
             } else {
+                if temp_ri < self.ri.get() {
+                    self.messages_dropped_count
+                        .set(self.messages_dropped_count.get() + self.ri.get() - temp_ri);
+                    self.messages_dropped_state.store(true, Ordering::Relaxed);
+                }
                 self.ri.inc();
                 return Ok(val);
             }
         }
+    }
+
+    /// Returns the total number of dropped messages for the entire history of this receiver
+    pub fn get_dropped_messages_count(&self) -> usize {
+        self.messages_dropped_count.get()
+    }
+
+    /// Indicates whether messages were dropped the last time the message buffer was read
+    pub fn get_dropped_messages_state(&self) -> bool {
+        self.messages_dropped_state.load(Ordering::Relaxed)
+    }
+
+    /// Returns the receiver name
+    pub fn get_id(&self) -> usize {
+        self.id
     }
 }
 
@@ -145,6 +178,9 @@ impl<T> Clone for Receiver<T> {
             size: self.size,
             sub_count: Arc::clone(&self.sub_count),
             is_sender_available: self.is_sender_available.clone(),
+            messages_dropped_count: AtomicCounter::new(0),
+            messages_dropped_state: AtomicBool::new(self.messages_dropped_state.load(Ordering::Relaxed)),
+            id: self.id + self.sub_count.get() - 1,
         }
     }
 }
@@ -177,7 +213,7 @@ mod test {
 
     #[test]
     fn subcount() {
-        let (sender, receiver) = bounded::<()>(1);
+        let (sender, receiver) = bounded::<()>(1, 1);
         let receiver2 = receiver.clone();
         assert_eq!(sender.sub_count.get(), 2);
         assert_eq!(receiver.sub_count.get(), 2);
@@ -190,14 +226,14 @@ mod test {
 
     #[test]
     fn eq() {
-        let (_sender, receiver) = bounded::<()>(1);
+        let (_sender, receiver) = bounded::<()>(1, 1);
         let receiver2 = receiver.clone();
         assert_eq!(receiver, receiver2);
     }
 
     #[test]
     fn bounded_channel() {
-        let (sender, receiver) = bounded(1);
+        let (sender, receiver) = bounded(1, 1);
         let receiver2 = receiver.clone();
         sender.broadcast(123).unwrap();
         assert_eq!(*receiver.try_recv().unwrap(), 123);
@@ -206,7 +242,7 @@ mod test {
 
     #[test]
     fn bounded_channel_no_subs() {
-        let (sender, receiver) = bounded(1);
+        let (sender, receiver) = bounded(1, 1);
         let rx2 = receiver.clone();
         drop(receiver);
         assert!(sender.broadcast(123).is_ok());
@@ -217,21 +253,21 @@ mod test {
 
     #[test]
     fn bounded_channel_no_sender() {
-        let (sender, receiver) = bounded::<()>(1);
+        let (sender, receiver) = bounded::<()>(1, 1);
         drop(sender);
         assert_eq!(receiver.is_sender_available(), false);
     }
 
     #[test]
     fn bounded_channel_size() {
-        let (sender, receiver) = bounded::<()>(3);
+        let (sender, receiver) = bounded::<()>(3, 1);
         assert_eq!(sender.buffer.len(), 3);
         assert_eq!(receiver.buffer.len(), 3);
     }
 
     #[test]
     fn bounded_within_size() {
-        let (sender, receiver) = bounded(3);
+        let (sender, receiver) = bounded(3, 1);
         assert_eq!(sender.buffer.len(), 3);
 
         for i in 0..3 {
@@ -244,7 +280,7 @@ mod test {
 
     #[test]
     fn bounded_overflow() {
-        let (sender, receiver) = bounded(3);
+        let (sender, receiver) = bounded(3, 1);
         assert_eq!(sender.buffer.len(), 3);
 
         for i in 0..4 {
@@ -257,33 +293,55 @@ mod test {
 
     #[test]
     fn bounded_overflow_with_reads() {
-        let (sender, receiver) = bounded(3);
+        let (sender, receiver) = bounded(3, 1);
         assert_eq!(sender.buffer.len(), 3);
+        let receiver1 = receiver.clone();
 
         for i in 0..3 {
             sender.broadcast(i).unwrap();
         }
 
         assert_eq!(*receiver.try_recv().unwrap(), 0);
+        assert_eq!(receiver.get_dropped_messages_state(), false);
         assert_eq!(*receiver.try_recv().unwrap(), 1);
+        assert_eq!(receiver.get_dropped_messages_state(), false);
 
         // "Cycle" buffer around twice
-        for i in 2..10 {
+        for i in 3..11 {
             sender.broadcast(i).unwrap();
         }
 
         // Should be reading from the last element in the buffer
-        assert_eq!(*receiver.buffer[receiver.buffer.len() - 1].load_full().unwrap(), 7);
-        assert_eq!(*receiver.try_recv().unwrap(), 7);
+        assert_eq!(*receiver.buffer[receiver.buffer.len() - 1].load_full().unwrap(), 8);
+        assert_eq!(*receiver.try_recv().unwrap(), 8);
+        assert_eq!(receiver.get_dropped_messages_state(), true);
+        assert_eq!(receiver.get_dropped_messages_count(), 6);
 
         // Cloned receiver start reading where the original receiver left off
-        let receiver2 = receiver.clone();
-        assert_eq!(*receiver2.try_recv().unwrap(), 8);
+        let mut receiver2 = receiver.clone();
+        assert_eq!(*receiver2.try_recv().unwrap(), 9);
+        assert_eq!(*receiver2.messages_dropped_state.get_mut(), false);
 
-        sender.broadcast(10).unwrap();
+        sender.broadcast(11).unwrap();
 
         // Test reader has moved forward in the buffer
         let values = receiver.into_iter().map(|v| *v).collect::<Vec<_>>();
-        assert_eq!(values, (8..=10).collect::<Vec<i32>>());
+        assert_eq!(values, (9..=11).collect::<Vec<i32>>());
+
+        // Test messages discarded
+        for i in 12..20 {
+            sender.broadcast(i).unwrap();
+        }
+        assert_eq!(*receiver1.try_recv().unwrap(), 17);
+        assert_eq!(receiver1.get_dropped_messages_count(), 17);
+        assert_eq!(receiver1.get_dropped_messages_state(), true);
+        assert_eq!(*receiver1.try_recv().unwrap(), 18);
+        assert_eq!(receiver1.get_dropped_messages_state(), false);
+
+        assert_eq!(*receiver2.try_recv().unwrap(), 17);
+        assert_eq!(receiver2.get_dropped_messages_count(), 7);
+        assert_eq!(receiver2.get_dropped_messages_state(), true);
+        assert_eq!(*receiver2.try_recv().unwrap(), 18);
+        assert_eq!(receiver2.get_dropped_messages_state(), false);
     }
 }
