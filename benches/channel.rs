@@ -36,7 +36,7 @@ fn bench_raw_channel(c: &mut Criterion) {
     const NUM_MESSAGES: usize = 1000;
 
     c.bench_function("raw channel", move |b| {
-        let (tx, rx) = raw_bounded(BUF_SIZE);
+        let (tx, rx) = raw_bounded(BUF_SIZE, 1);
 
         let mut subscribers = repeat(&rx).cloned().take(NUM_SUBSCRIBERS).collect::<Vec<_>>();
 
@@ -70,20 +70,21 @@ fn bench_async_channel(c: &mut Criterion) {
 
     c.bench_function("async channel", move |b| {
         let rt = Runtime::new().unwrap();
-        let (mut publisher, subscriber) = bounded(BUF_SIZE);
+        let handle = rt.handle().clone();
+        let (mut publisher, subscriber) = bounded(BUF_SIZE, 2);
 
         let mut subscribers = repeat(&subscriber).cloned().take(NUM_SUBSCRIBERS).collect::<Vec<_>>();
 
         b.iter_with_setup(
             || {
                 (0..NUM_MESSAGES).for_each(|v| {
-                    rt.block_on(publisher.send(v)).unwrap();
+                    handle.block_on(publisher.send(v)).unwrap();
                 });
             },
             |_| {
                 (0..NUM_MESSAGES).for_each(|i| {
                     let sub_read_all = subscribers.iter_mut().map(|s| s.next());
-                    let values = rt.block_on(join_all(sub_read_all));
+                    let values = handle.block_on(join_all(sub_read_all));
                     assert_eq!(values.len(), NUM_SUBSCRIBERS);
                     assert!(values.iter().all(|v| **(v.as_ref().unwrap()) == i));
                 })
