@@ -2,8 +2,13 @@ use futures::{executor::block_on, stream, StreamExt};
 use tari_broadcast_channel::bounded;
 
 fn main() {
-    let (publisher, subscriber1) = bounded(10);
+    let (publisher, subscriber1) = bounded(10, 1);
     let subscriber2 = subscriber1.clone();
+    let subscriber3 = subscriber1.clone();
+
+    assert_eq!(subscriber1.get_receiver_id(), 10000);
+    assert_eq!(subscriber2.get_receiver_id(), 10001);
+    assert_eq!(subscriber3.get_receiver_id(), 10002);
 
     block_on(async move {
         stream::iter(1..15).map(Ok).forward(publisher).await.unwrap();

@@ -48,3 +48,9 @@ impl PartialEq for AtomicCounter {
 }
 
 impl Eq for AtomicCounter {}
+
+impl fmt::Display for AtomicCounter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.get())
+    }
+}
