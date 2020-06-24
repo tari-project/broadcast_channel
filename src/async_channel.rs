@@ -217,7 +217,7 @@ mod test {
         assert_eq!(subscriber2.get_receiver_id(), 10001);
         assert_eq!(subscriber3.get_receiver_id(), 10002);
 
-        let (publisher2, subscriber4): (async_channel::Publisher<usize>, async_channel::Subscriber<usize>) =
+        let (_publisher2, subscriber4): (async_channel::Publisher<usize>, async_channel::Subscriber<usize>) =
             super::bounded(10, 2);
         let subscriber5 = subscriber4.clone();
         let subscriber6 = subscriber4.clone();
