@@ -20,9 +20,10 @@
 // WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 // USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+use std::{iter::repeat, time::Duration};
+
 use criterion::{criterion_group, Criterion};
 use futures::{future::join_all, SinkExt, StreamExt};
-use std::{iter::repeat, time::Duration};
 use tari_broadcast_channel::{bounded, raw_bounded};
 use tokio::runtime::Runtime;
 
