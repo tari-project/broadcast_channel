@@ -1,5 +1,5 @@
-use crate::atomic_counter::AtomicCounter;
-use arc_swap::ArcSwapOption;
+// Use std mpsc's error types as our own
+pub use std::sync::mpsc::{RecvError, RecvTimeoutError, SendError, TryRecvError};
 use std::{
     fmt::Debug,
     iter::Iterator,
@@ -9,8 +9,9 @@ use std::{
     },
 };
 
-// Use std mpsc's error types as our own
-pub use std::sync::mpsc::{RecvError, RecvTimeoutError, SendError, TryRecvError};
+use arc_swap::ArcSwapOption;
+
+use crate::atomic_counter::AtomicCounter;
 
 const ID_MULTIPLIER: usize = 10_000;
 

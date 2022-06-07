@@ -1,4 +1,5 @@
-use crate::channel::{bounded as raw_bounded, Receiver, SendError, Sender, TryRecvError};
+use std::{pin::Pin, sync::Arc, task::Poll};
+
 use crossbeam_channel as mpsc;
 use futures::{
     task::{self, AtomicWaker},
@@ -6,7 +7,8 @@ use futures::{
     Stream,
 };
 use log::*;
-use std::{pin::Pin, sync::Arc, task::Poll};
+
+use crate::channel::{bounded as raw_bounded, Receiver, SendError, Sender, TryRecvError};
 
 const LOG_TARGET: &str = "tari_broadcast_channel::async_channel";
 const ID_MULTIPLIER: usize = 10_000;
@@ -204,8 +206,9 @@ pub fn alarm() -> (Waker, Sleeper) {
 
 #[cfg(test)]
 mod test {
-    use crate::async_channel;
     use futures::{executor::block_on, stream, StreamExt};
+
+    use crate::async_channel;
 
     #[test]
     fn channel() {
