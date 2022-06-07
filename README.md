@@ -1,5 +1,7 @@
 # Bounded Non-Blocking Single-Producer, Multi-Consumer Broadcast Channel
 
+## This repo is deprecated and no longer maintained.
+
 Parts of this code were forked from https://github.com/filipdulic/bus-queue. 
 
 # Examples
