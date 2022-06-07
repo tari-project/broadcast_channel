@@ -18,7 +18,7 @@ log = "0.4.6"
 
 [dev-dependencies]
 criterion = "0.3.0"
-tokio = {version="0.2.21", features = ["rt-core"] }
+tokio = {version="1.19.2", features = ["rt", "rt-multi-thread"] }
 
 [[example]]
 name = "raw-simple"
