@@ -41,9 +41,8 @@ impl<T> Sink<T> for Publisher<T> {
 
     fn start_send(mut self: Pin<&mut Self>, item: T) -> Result<(), Self::Error> {
         self.waker.collect_new_wakers();
-        self.sender.broadcast(item).and_then(|_| {
+        self.sender.broadcast(item).map(|_| {
             self.waker.wake_all();
-            Ok(())
         })
     }
 
