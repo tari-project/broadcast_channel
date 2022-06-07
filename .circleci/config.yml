@@ -19,8 +19,9 @@ commands:
           name: Broadcast channel tests
           # We must run nightly rust because our rustfmt config uses nightly-only features.
           command: |
-             rustup component add --toolchain nightly rustfmt
-             cargo fmt --all -- --check
+            rustup toolchain install nightly
+            rustup component add --toolchain nightly rustfmt
+            cargo +nightly fmt --all -- --check
       - save_cache:
           paths:
             - /usr/local/cargo/registry
